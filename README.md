@@ -13,14 +13,14 @@ This simple bash script is used to compress large amount of videos in a director
 
 ## Getting Started
 ### Prerequisites
-You ned to have Ffmpeg installed on your system (Follow the installation guides here)
+You ned to have Ffmpeg installed on your system (Follow the installation guides [here](https://www.ffmpeg.org/download.html))
 
 ### Usage
 To do so, just call the script and pass the directory with your videos an an input using the `-i` flag (ex : `./compressor.sh -i /path/to/your/videos`)
 
 ```sh
 Usage: <script> -inputPath <inputPath> [options]
-
+A
 Options:
   -i, -inputPath <inputPath>  Specify the input path.
   -preset <presetValue>       Specify the preset value (default: fast).
