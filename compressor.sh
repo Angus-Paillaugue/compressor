@@ -184,6 +184,7 @@ for file in "${files[@]}"; do
   # Check if file is a regular file
   if [ -f "$file" ]; then
     # Extracting file information
+    filesToGo=$((filesToGo-1))
     filePath="$(dirname -- "$file")"
     fileName="$(basename -- "$file")"
     fileNameWithoutExtension="${fileName%.*}"
@@ -192,7 +193,7 @@ for file in "${files[@]}"; do
 
     # Check if the file is already processed
     if isProcessed "$file"; then
-      echo -e " ${YELLOW}󰒬${NC} Skipping already processed file: $fileName"
+      echo -e " ${YELLOW}󰒬${NC} Skipping already processed file: $fileName (${YELLOW}${filesToGo}${NC} to go)"
       continue
     fi
 
@@ -216,7 +217,6 @@ for file in "${files[@]}"; do
     # Renaming the output file to the original file
     rm "$file"
 
-    filesToGo=$((filesToGo-1))
     echo -e " ${GREEN}✓${NC} ${fileName} : ${RED}${baseSize}${NC} → ${GREEN}${newSize}${NC} (${YELLOW}${filesToGo}${NC} to go)"
   fi
 done
