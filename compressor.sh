@@ -6,6 +6,12 @@ YELLOW='\033[0;33m'
 NC='\033[0m' # No Color
 currentOutputFile=""
 
+# Check if ffmpeg is installed
+if [ ! -x "$(command -v ffmpeg)" ]; then
+  throwError "ffmpeg is not installed. Please install ffmpeg to continue."
+  exit 1
+fi
+
 # Function to handle errors
 function errorHandling() {
   # $1: line number
@@ -47,6 +53,7 @@ function displayHelp() {
   echo "  -crf <value>                Specify the CRF value (default: 23)."
   echo "                              Valid range: 0-51."
   echo "  -h, --help                  Display this help message and exit."
+  echo "  -r, --rename                Rename the processed files to remove the trailing \"-p\" in their name."
 }
 
 # Function to display spinner
@@ -82,6 +89,91 @@ function isProcessed() {
   [[ $fileNameWithoutExtension == *"-p" ]]
 }
 
+# Function to compress the video
+function compress() {
+  local file="$1"
+  currentOutputFile="$file"
+  local filePath="$(dirname -- "$file")"
+  local fileName="$(basename -- "$file")"
+  local fileNameWithoutExtension="${fileName%.*}"
+  local extension="${fileName##*.}"
+  local outputName="$filePath/$fileNameWithoutExtension-p.$extension"
+  # Check if the file is already processed
+  if isProcessed "$file"; then
+    return
+  fi
+
+  # Compress the video
+  ffmpeg -i "$1" -vcodec libx265 -crf $crf -preset "$preset" "$outputName" > /dev/null 2>&1 &
+  videoPid=$!
+
+  # Displays the spinner and waits for the videoPid to finish
+  spinner "Compressing $fileName (${RED}$baseSize${NC})" &
+  spinnerPid=$!
+  wait $videoPid
+  kill $spinnerPid
+  rm "$1" # Remove the original file
+}
+
+# Function to print the time taken to compress the video(s)
+function printTimeTaken() {
+  echo -ne "\n 👍 All done in "
+  T=$1
+  D=$((T/60/60/24))
+  H=$((T/60/60%24))
+  M=$((T/60%60))
+  S=$((T%60))
+  (( D > 0 )) && echo -n "$D days "
+  (( H > 0 )) && echo -n "$H hours "
+  (( M > 0 )) && echo -n "$M minutes "
+  (( D > 0 || H > 0 || M > 0 )) && echo -n "and "
+  echo "$S seconds"
+}
+
+# Function to rename the processed files
+function renameFiles() {
+  if [ -z "$1" ]; then
+    throwError "File path is required to rename the file(s)"
+    exit 1
+  fi
+  if [ -d "$1" ]; then
+    # Create a find command to find all the video files having an extension in validFormats
+    findCommand="find \"$1\" -maxdepth 1 -type f -name "*-p.*" -print0"
+
+    # Execute the find command and read the files into an array
+    files=() # Create an empty array to store the files
+    while IFS= read -r -d $'\0' file; do
+      files+=("$file")
+    done < <(eval "$findCommand")
+
+    if [ ${#files[@]} -eq 0 ]; then
+      throwError "No files found to rename in $1"
+      exit 1
+    fi
+
+    # Loop through files in inputPath
+    for file in "${files[@]}"; do
+      # Check if file is a regular file
+      if [ -f "$file" ]; then
+        renameFile "$file"
+      fi
+    done
+
+    echo -e " ${GREEN}✓${NC} Renamed ${#files[@]} files successfully"
+  else
+    renameFile "$1"
+    echo -e " ${GREEN}✓${NC} File renamed successfully"
+  fi
+}
+function renameFile() {
+  local file="$1"
+  local fileName=$(basename -- "$file")
+  local fileNameWithoutExtension="${fileName%.*}"
+  local extension="${fileName##*.}"
+  local newFileName="${fileNameWithoutExtension%-p}.$extension"
+  mv "$file" "$(dirname -- "$file")/$newFileName"
+}
+
 # Trap SIGINT (Ctrl+C) and call handleCtrlC function
 trap handleCtrlC SIGINT
 # Use trap to catch ERR and call the errorHandling function
@@ -99,6 +191,11 @@ while [ "$1" != "" ]; do
   case $1 in
     -h | --help )
       displayHelp
+      exit 0
+      ;;
+    -r | --rename )
+      shift
+      renameFiles "$1"
       exit 0
       ;;
     -i | -inputPath )
@@ -120,8 +217,6 @@ while [ "$1" != "" ]; do
   esac
   shift
 done
-
-# Args validation
 # Validate inputPath
 if [ -z "$inputPath" ]; then
   throwError "Input path is required."
@@ -140,104 +235,113 @@ if [[ ! $crf =~ ^[0-9]+$ ]] || [ $crf -lt 0 ] || [ $crf -gt 51 ]; then
 fi
 
 # Input path validation
-if [ ! -d "$inputPath" ]; then
-  throwError "$inputPath is not a valid directory"
+if [[ ! -d "$inputPath" && ! -f "$inputPath" ]]; then
+  throwError "$inputPath is not a valid directory or file"
   exit 1
 fi
 
 # Start the timer
 start=$(date +%s)
 
-findCommand="find \"$inputPath\" -maxdepth 1 -type f \( "
-for format in "${validFormats[@]}"; do
-  findCommand+=" -iname \"*.$format\" -o"
-done
-# Remove the trailing " -o"
-findCommand="${findCommand% -o}"
-findCommand+=" \) -print0"
+# If inputPath is a file
+if [ -f "$inputPath" ]; then
+  file="$inputPath"
+  filePath="$(dirname -- "$file")"
+  fileName="$(basename -- "$file")"
+  filePath="$(dirname -- "$file")"
+  fileName="$(basename -- "$file")"
+  fileNameWithoutExtension="${fileName%.*}"
+  extension="${fileName##*.}"
+  outputName="$filePath/$fileNameWithoutExtension-p.$extension"
 
-# Execute the find command and read the files into an array
-files=()
-while IFS= read -r -d $'\0' file; do
-  files+=("$file")
-done < <(eval "$findCommand")
-
-numberOfFiles=${#files[@]}
-
-# If no files found in $inputPath, exit
-if [ $numberOfFiles -eq 0 ]; then
-  throwError "No videos found in $inputPath"
-  exit 1
-fi
-
-# Display the number of files found
-echo -e " ${GREEN}✓${NC} Found $numberOfFiles videos to compress"
-
-# Get the original directory size
-originalDirSizeHR=$(du -h -s "$inputPath" | cut -f1)
-originalDirSize=$(du -s "$inputPath" | cut -f1)
-
-filesToGo=$numberOfFiles
-
-# Loop through files in inputPath
-for file in "${files[@]}"; do
-  # Check if file is a regular file
-  if [ -f "$file" ]; then
-    # Extracting file information
-    filesToGo=$((filesToGo-1))
-    filePath="$(dirname -- "$file")"
-    fileName="$(basename -- "$file")"
-    fileNameWithoutExtension="${fileName%.*}"
-    extension="${fileName##*.}"
-    outputName="$filePath/$fileNameWithoutExtension-p.$extension"
-
-    # Check if the file is already processed
-    if isProcessed "$file"; then
-      echo -e " ${YELLOW}󰒬${NC} Skipping already processed file: $fileName (${YELLOW}${filesToGo}${NC} to go)"
-      continue
-    fi
-
+  # Check if the file is already processed
+  if isProcessed "$file"; then
+    echo -e " ${GREEN}✓${NC} ${fileName} is already processed"
+  else
     # Get the original file size
     baseSize=$(du -h "$file" | cut -f1)
-    currentOutputFile="$outputName"
 
     # Actual compression
-    ffmpeg -i "$file" -vcodec libx265 -crf $crf -preset "$preset" "$outputName" > /dev/null 2>&1 &
-    videoPid=$!
-
-    # Displays the spinner and waits for the videoPid to finish
-    spinner "Compressing $fileName (${RED}$baseSize${NC})" &
-    spinnerPid=$!
-    wait $videoPid
-    kill $spinnerPid
+    compress "$file"
 
     # Get the new file size
     newSize=$(du -h "$outputName" | cut -f1)
 
-    # Renaming the output file to the original file
-    rm "$file"
+    echo -e " ${GREEN}✓${NC} ${fileName} : ${RED}${baseSize}${NC} → ${GREEN}${newSize}${NC}"
 
-    echo -e " ${GREEN}✓${NC} ${fileName} : ${RED}${baseSize}${NC} → ${GREEN}${newSize}${NC} (${YELLOW}${filesToGo}${NC} to go)"
+    # Print the time taken
+    printTimeTaken $(($(date +%s) - $start))
   fi
-done
+else
+  # Create a find command to find all the video files having an extension in validFormats
+  findCommand="find \"$inputPath\" -maxdepth 1 -type f -not -name "*-p.*" \( "
+  for format in "${validFormats[@]}"; do
+    findCommand+=" -iname \"*.$format\" -o"
+  done
+  # Remove the trailing " -o"
+  findCommand="${findCommand% -o}"
+  findCommand+=" \) -print0"
 
-# Print total time taken to compress all files
-end=$(date +%s)
-runtime=$((end-start))
-echo -ne "\n 👍 All done in "
-T=$runtime
-D=$((T/60/60/24))
-H=$((T/60/60%24))
-M=$((T/60%60))
-S=$((T%60))
-(( D > 0 )) && echo -n "$D days "
-(( H > 0 )) && echo -n "$H hours "
-(( M > 0 )) && echo -n "$M minutes "
-(( D > 0 || H > 0 || M > 0 )) && echo -n "and "
-echo "$S seconds"
+  # Execute the find command and read the files into an array
+  files=() # Create an empty array to store the files
+  while IFS= read -r -d $'\0' file; do
+    files+=("$file")
+  done < <(eval "$findCommand")
 
-# Calculates and prints the compression rate
-finalDirSizeHr=$(du -h -s "$inputPath" | cut -f1)
-finalDirSize=$(du -s "$inputPath" | cut -f1)
-compressionRate=$(echo "scale=1; ($originalDirSize - $finalDirSize) / $originalDirSize * 100" | bc)
-echo -e " ${GREEN}✓${NC} Reduced the directory size by ${YELLOW}$compressionRate${NC}% : ${RED}$originalDirSizeHR${NC} → ${GREEN}$finalDirSizeHr${NC}"
+  numberOfFiles=${#files[@]}
+
+  # If no files found in $inputPath, exit
+  if [ $numberOfFiles -eq 0 ]; then
+    throwError "No videos to compress found in $inputPath"
+    exit 1
+  fi
+
+  # Display the number of files found
+  echo -e " ${GREEN}✓${NC} Found $numberOfFiles videos to compress"
+
+  # Get the original directory size
+  originalDirSize=$(du -s "$inputPath" | cut -f1)
+  originalDirSizeHR=$(numfmt --to=iec-i $originalDirSize)
+
+  filesToGo=$numberOfFiles
+
+  # Loop through files in inputPath
+  for file in "${files[@]}"; do
+    # Check if file is a regular file
+    if [ -f "$file" ]; then
+      # Extracting file information
+      filesToGo=$((filesToGo-1))
+      filePath="$(dirname -- "$file")"
+      fileName="$(basename -- "$file")"
+      fileNameWithoutExtension="${fileName%.*}"
+      extension="${fileName##*.}"
+      outputName="$filePath/$fileNameWithoutExtension-p.$extension"
+
+      # Check if the file is already processed
+      if isProcessed "$file"; then
+        echo -e " ${YELLOW}󰒬${NC} Skipping already processed file: $fileName (${YELLOW}${filesToGo}${NC} to go)"
+        continue
+      fi
+
+      # Get the original file size
+      baseSize=$(du -h "$file" | cut -f1)
+
+      # Actual compression
+      compress "$file"
+
+      # Get the new file size
+      newSize=$(du -h "$outputName" | cut -f1)
+
+      echo -e " ${GREEN}✓${NC} ${fileName} : ${RED}${baseSize}${NC} → ${GREEN}${newSize}${NC} (${YELLOW}${filesToGo}${NC} to go)"
+    fi
+  done
+
+  # Print the time taken
+  printTimeTaken $(($(date +%s) - $start))
+  finalDirSize=$(du -s "$inputPath" | cut -f1)
+  finalDirSizeHr=$(numfmt --to=iec-i $finalDirSize)
+  compressionRate=$(echo "scale=1; ($originalDirSize - $finalDirSize) / $originalDirSize * 100" | bc)
+  echo -e " ${GREEN}✓${NC} Reduced the directory size by ${YELLOW}$compressionRate${NC}% : ${RED}$originalDirSizeHR${NC} → ${GREEN}$finalDirSizeHr${NC}"
+
+  exit 0
+fi
