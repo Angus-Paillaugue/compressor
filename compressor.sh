@@ -44,16 +44,16 @@ function handleCtrlC() {
 
 # Function to display help
 function displayHelp() {
-  echo "Usage: compress-copy.sh -inputPath <inputPath> [options]"
+  echo "Usage: compress-copy.sh -i <inputPath> [options]"
   echo ""
   echo "Options:"
-  echo "  -i, -inputPath <inputPath>  Specify the input path."
-  echo "  -preset <presetValue>       Specify the preset value (default: fast)."
-  echo "                              Valid presets: ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow, placebo."
-  echo "  -crf <value>                Specify the CRF value (default: 23)."
-  echo "                              Valid range: 0-51."
-  echo "  -h, --help                  Display this help message and exit."
-  echo "  -r, --rename                Rename the processed files to remove the trailing \"-p\" in their name."
+  echo "  -i, --inputPath <inputPath>   Specify the input path."
+  echo "  -preset <presetValue>         Specify the preset value (default: fast)."
+  echo "                                Valid presets: ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow, placebo."
+  echo "  -crf <value>                  Specify the CRF value (default: 23)."
+  echo "                                Valid range: 0-51."
+  echo "  -h, --help                    Display this help message and exit."
+  echo "  -r, --rename <inputPath>      Rename the processed files to remove the trailing \"-p\" in their name."
 }
 
 # Function to display spinner
@@ -147,7 +147,7 @@ function renameFiles() {
     done < <(eval "$findCommand")
 
     if [ ${#files[@]} -eq 0 ]; then
-      throwError "No files found to rename in $1"
+      throwError "No files to rename found in $1"
       exit 1
     fi
 
@@ -198,7 +198,7 @@ while [ "$1" != "" ]; do
       renameFiles "$1"
       exit 0
       ;;
-    -i | -inputPath )
+    -i | --inputPath )
       shift
       inputPath="$1"
       ;;
@@ -301,7 +301,7 @@ else
 
   # Get the original directory size
   originalDirSize=$(du -s "$inputPath" | cut -f1)
-  originalDirSizeHR=$(numfmt --to=iec-i $originalDirSize)
+  originalDirSizeHR=$(du -s -h "$inputPath" | cut -f1)
 
   filesToGo=$numberOfFiles
 
@@ -339,7 +339,7 @@ else
   # Print the time taken
   printTimeTaken $(($(date +%s) - $start))
   finalDirSize=$(du -s "$inputPath" | cut -f1)
-  finalDirSizeHr=$(numfmt --to=iec-i $finalDirSize)
+  finalDirSizeHr=$(du -h -s "$inputPath" | cut -f1)
   compressionRate=$(echo "scale=1; ($originalDirSize - $finalDirSize) / $originalDirSize * 100" | bc)
   echo -e " ${GREEN}✓${NC} Reduced the directory size by ${YELLOW}$compressionRate${NC}% : ${RED}$originalDirSizeHR${NC} → ${GREEN}$finalDirSizeHr${NC}"
 
