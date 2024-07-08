@@ -36,8 +36,11 @@ trap handleCtrlC SIGINT
 # Use trap to catch ERR and call the errorHandling function
 trap 'errorHandling $LINENO $BASH_COMMAND' ERR SIGTERM
 
-# Install the compressor script
-sudo cp compressor.sh /usr/local/bin/compressor
-sudo chmod +x /usr/local/bin/compressor
+# Install the video-compressor script
+sudo cp video-compressor.sh /usr/local/bin/video-compressor
+sudo chmod +x /usr/local/bin/video-compressor
+# Install the image-compressor script
+sudo cp image-compressor.sh /usr/local/bin/image-compressor
+sudo chmod +x /usr/local/bin/image-compressor
 
-echo -e " ${GREEN}✓${NC} The compressor script has been installed successfully."
+echo -e " ${GREEN}✓${NC} The compressor scripts have been installed successfully."

@@ -6,12 +6,6 @@ YELLOW='\033[0;33m'
 NC='\033[0m' # No Color
 currentOutputFile=""
 
-# Check if ffmpeg is installed
-if [ ! -x "$(command -v ffmpeg)" ]; then
-  throwError "ffmpeg is not installed. Please install ffmpeg to continue."
-  exit 1
-fi
-
 # Function to handle errors
 function errorHandling() {
   # $1: line number
@@ -48,11 +42,7 @@ function displayHelp() {
   echo ""
   echo "Options:"
   echo "  -i, --inputPath <inputPath>   Specify the input path."
-  echo "  -preset <presetValue>         Specify the preset value (default: fast)."
-  echo "                                Valid presets: ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow, placebo."
-  echo "  -crf <value>                  Specify the CRF value (default: 23)."
-  echo "                                Valid range: 0-51."
-  echo "  -h, --help                    Display this help message and exit."
+  echo "  -q, --quality <percentage>    Specify the quality percentage (default: 50%)"
   echo "  -r, --rename <inputPath>      Rename the processed files to remove the trailing \"-p\" in their name."
 }
 
@@ -104,7 +94,7 @@ function compress() {
   fi
 
   # Compress the video
-  ffmpeg -i "$1" -vcodec libx265 -crf $crf -preset "$preset" "$outputName" > /dev/null 2>&1 &
+  convert $file -quality $quality "$outputName" > /dev/null 2>&1 &
   videoPid=$!
 
   # Displays the spinner and waits for the videoPid to finish
@@ -174,18 +164,21 @@ function renameFile() {
   mv "$file" "$(dirname -- "$file")/$newFileName"
 }
 
+# Check if imagick is installed
+if [ ! -x "$(command -v convert)" ]; then
+  throwError "imagick is not installed. Please install imagick to continue."
+  exit 1
+fi
+
 # Trap SIGINT (Ctrl+C) and call handleCtrlC function
 trap handleCtrlC SIGINT
 # Use trap to catch ERR and call the errorHandling function
 trap 'errorHandling $LINENO $BASH_COMMAND' ERR SIGTERM
 
 # Flags
-preset="fast" # Default value for the preset
-valid_presets=("ultrafast" "superfast" "veryfast" "faster" "fast" "medium" "slow" "slower" "veryslow" "placebo")
-crf=23 # Default value for the crf to 23 (best I found for my use case)
+quality="50%" # Default value for the quality
 inputPath=""
-validFormats=("mp4" "mov" "avi" "mkv") # Valid video formats
-
+validFormats=("png" "jpg")
 # Parse the arguments
 while [ "$1" != "" ]; do
   case $1 in
@@ -202,13 +195,9 @@ while [ "$1" != "" ]; do
       shift
       inputPath="$1"
       ;;
-    -preset )
+    -q | --quality )
       shift
-      preset="$1"
-      ;;
-    -crf )
-      shift
-      crf="$1"
+      quality="$1"
       ;;
     *)
       echo -e "${RED}Unknown option${NC}: $1"
@@ -223,23 +212,11 @@ if [ -z "$inputPath" ]; then
   displayHelp
   exit 1
 fi
-# Validate preset
-if [[ ! " ${valid_presets[@]} " =~ " ${preset} " ]]; then
-  throwError "Invalid preset value '$preset'. Valid options are: ${valid_presets[*]}"
-  exit 1
-fi
-# Validate crf
-if [[ ! $crf =~ ^[0-9]+$ ]] || [ $crf -lt 0 ] || [ $crf -gt 51 ]; then
-  throwError "Invalid crf value '$crf'. crf value should be an integer between 0 and 51"
-  exit 1
-fi
-
 # Input path validation
 if [[ ! -d "$inputPath" && ! -f "$inputPath" ]]; then
   throwError "$inputPath is not a valid directory or file"
   exit 1
 fi
-
 # Start the timer
 start=$(date +%s)
 
@@ -292,12 +269,12 @@ else
 
   # If no files found in $inputPath, exit
   if [ $numberOfFiles -eq 0 ]; then
-    throwError "No videos to compress found in $inputPath"
+    throwError "No images to compress found in $inputPath"
     exit 1
   fi
 
   # Display the number of files found
-  echo -e " ${GREEN}✓${NC} Found $numberOfFiles videos to compress"
+  echo -e " ${GREEN}✓${NC} Found $numberOfFiles images to compress"
 
   # Get the original directory size
   originalDirSize=$(du -s "$inputPath" | cut -f1)
