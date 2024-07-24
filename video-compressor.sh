@@ -23,7 +23,7 @@ function errorHandling() {
 # Function to throw error and exit
 function throwError() {
   # $1: error message
-  echo -e "${RED}✖${NC} $1"
+  echo -e " ${RED}✖${NC} $1"
   local exitCode=${2:true}
   if [ "$exitCode" = true ]; then
     exit 1
