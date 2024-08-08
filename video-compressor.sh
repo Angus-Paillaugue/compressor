@@ -274,7 +274,7 @@ if [ -f "$inputPath" ]; then
   fi
 else
   # Create a find command to find all the video files having an extension in validFormats
-  findCommand="find \"$inputPath\" -maxdepth 1 -type f -not -name "*-p.*" \( "
+  findCommand="find \"$inputPath\" -maxdepth 1 -type f -not -name \"*-p.*\" \( "
   for format in "${validFormats[@]}"; do
     findCommand+=" -iname \"*.$format\" -o"
   done
