@@ -45,3 +45,17 @@ Options:
   -q, --quality <percentage>    Specify the quality percentage (default: 50%)
   -r, --rename <inputPath>      Rename the processed files to remove the trailing "-p" in their name.
 ```
+
+
+# Run in the background
+
+You can use `nohup` like so :
+```bash
+ video-compressor -i ./ > /dev/null 2>&1 &
+```
+and kill it by retrieving it's PID :
+```bash
+ps -ef | grep compressor
+```
+
+and using `kill` with the PID (first number).

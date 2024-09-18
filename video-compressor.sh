@@ -92,12 +92,12 @@ function isProcessed() {
 # Function to compress the video
 function compress() {
   local file="$1"
-  currentOutputFile="$file"
   local filePath="$(dirname -- "$file")"
   local fileName="$(basename -- "$file")"
   local fileNameWithoutExtension="${fileName%.*}"
   local extension="${fileName##*.}"
   local outputName="$filePath/$fileNameWithoutExtension-p.$extension"
+  currentOutputFile="$outputName"
   # Check if the file is already processed
   if isProcessed "$file"; then
     return
