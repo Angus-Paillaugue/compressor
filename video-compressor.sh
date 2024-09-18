@@ -104,7 +104,7 @@ function compress() {
   fi
 
   # Compress the video
-  ffmpeg -i "$file" -vcodec libx265 -crf $crf -preset "$preset" "$outputName" > /dev/null 2>&1 &
+  ffmpeg -i "$file" -vcodec libx265 -movflags use_metadata_tags -map_metadata 0 -crf $crf -preset "$preset" "$outputName" > /dev/null 2>&1 &
   videoPid=$!
 
   # Displays the spinner and waits for the videoPid to finish
