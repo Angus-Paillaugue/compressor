@@ -48,12 +48,13 @@ function displayHelp() {
   echo ""
   echo "Options:"
   echo "  -i, --inputPath <inputPath>   Specify the input path."
+  echo "  -r, --recursive               Recursively compress all the videos in the input path."
   echo "  -preset <presetValue>         Specify the preset value (default: fast)."
   echo "                                Valid presets: ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow, placebo."
   echo "  -crf <value>                  Specify the CRF value (default: 23)."
   echo "                                Valid range: 0-51."
   echo "  -h, --help                    Display this help message and exit."
-  echo "  -r, --rename <inputPath>      Rename the processed files to remove the trailing \"-p\" in their name."
+  echo "  --rename <inputPath>      Rename the processed files to remove the trailing \"-p\" in their name."
 }
 
 # Function to display spinner
@@ -185,6 +186,7 @@ valid_presets=("ultrafast" "superfast" "veryfast" "faster" "fast" "medium" "slow
 crf=23 # Default value for the crf to 23 (best I found for my use case)
 inputPath=""
 validFormats=("mp4" "mov" "avi" "mkv") # Valid video formats
+recursive=false
 
 # Parse the arguments
 while [ "$1" != "" ]; do
@@ -193,10 +195,13 @@ while [ "$1" != "" ]; do
       displayHelp
       exit 0
       ;;
-    -r | --rename )
+    --rename )
       shift
       renameFiles "$1"
       exit 0
+      ;;
+    -r | --recursive )
+      recursive=true
       ;;
     -i | --inputPath )
       shift
@@ -233,7 +238,6 @@ if [[ ! $crf =~ ^[0-9]+$ ]] || [ $crf -lt 0 ] || [ $crf -gt 51 ]; then
   throwError "Invalid crf value '$crf'. crf value should be an integer between 0 and 51"
   exit 1
 fi
-
 # Input path validation
 if [[ ! -d "$inputPath" && ! -f "$inputPath" ]]; then
   throwError "$inputPath is not a valid directory or file"
@@ -273,8 +277,12 @@ if [ -f "$inputPath" ]; then
     printTimeTaken $(($(date +%s) - $start))
   fi
 else
+  maxdepth="-maxdepth 1"
+  if [ "$recursive" = true ]; then
+    maxdepth=""
+  fi
   # Create a find command to find all the video files having an extension in validFormats
-  findCommand="find \"$inputPath\" -maxdepth 1 -type f -not -name \"*-p.*\" \( "
+  findCommand="find \"$inputPath\" $maxdepth -type f -not -name \"*-p.*\" \( "
   for format in "${validFormats[@]}"; do
     findCommand+=" -iname \"*.$format\" -o"
   done

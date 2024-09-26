@@ -6,6 +6,12 @@ YELLOW='\033[0;33m'
 NC='\033[0m' # No Color
 currentOutputFile=""
 
+# Check if imagick is installed
+if [ ! -x "$(command -v convert)" ]; then
+  throwError "imagick is not installed. Please install imagick to continue."
+  exit 1
+fi
+
 # Function to handle errors
 function errorHandling() {
   # $1: line number
@@ -42,8 +48,9 @@ function displayHelp() {
   echo ""
   echo "Options:"
   echo "  -i, --inputPath <inputPath>   Specify the input path."
+  echo "  -r, --recursive               Recursively compress all the images in the input path."
   echo "  -q, --quality <percentage>    Specify the quality percentage (default: 50%)"
-  echo "  -r, --rename <inputPath>      Rename the processed files to remove the trailing \"-p\" in their name."
+  echo "  --rename <inputPath>          Rename the processed files to remove the trailing \"-p\" in their name."
 }
 
 # Function to display spinner
@@ -164,12 +171,6 @@ function renameFile() {
   mv "$file" "$(dirname -- "$file")/$newFileName"
 }
 
-# Check if imagick is installed
-if [ ! -x "$(command -v convert)" ]; then
-  throwError "imagick is not installed. Please install imagick to continue."
-  exit 1
-fi
-
 # Trap SIGINT (Ctrl+C) and call handleCtrlC function
 trap handleCtrlC SIGINT
 # Use trap to catch ERR and call the errorHandling function
@@ -179,6 +180,8 @@ trap 'errorHandling $LINENO $BASH_COMMAND' ERR SIGTERM
 quality="50%" # Default value for the quality
 inputPath=""
 validFormats=("png" "jpg")
+recursive=false
+
 # Parse the arguments
 while [ "$1" != "" ]; do
   case $1 in
@@ -186,7 +189,10 @@ while [ "$1" != "" ]; do
       displayHelp
       exit 0
       ;;
-    -r | --rename )
+    -r | --recursive )
+      recursive=true
+      ;;
+    --rename )
       shift
       renameFiles "$1"
       exit 0
@@ -250,8 +256,12 @@ if [ -f "$inputPath" ]; then
     printTimeTaken $(($(date +%s) - $start))
   fi
 else
+  maxdepth="-maxdepth 1"
+  if [ "$recursive" = true ]; then
+    maxdepth=""
+  fi
   # Create a find command to find all the video files having an extension in validFormats
-  findCommand="find \"$inputPath\" -maxdepth 1 -type f -not -name \"*-p.*\" \( "
+  findCommand="find \"$inputPath\" $maxdepth -type f -not -name \"*-p.*\" \( "
   for format in "${validFormats[@]}"; do
     findCommand+=" -iname \"*.$format\" -o"
   done
