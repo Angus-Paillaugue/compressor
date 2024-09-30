@@ -134,8 +134,12 @@ function renameFiles() {
     exit 1
   fi
   if [ -d "$1" ]; then
+    maxdepth="-maxdepth 1"
+    if [ "$recursive" = true ]; then
+      maxdepth=""
+    fi
     # Create a find command to find all the video files having an extension in validFormats
-    findCommand="find \"$1\" -maxdepth 1 -type f -name \"*-p.*\" -print0"
+    findCommand="find \"$1\" $maxdepth -type f -name \"*-p.*\" -print0"
 
     # Execute the find command and read the files into an array
     files=() # Create an empty array to store the files
