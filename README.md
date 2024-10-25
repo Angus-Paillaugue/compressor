@@ -7,20 +7,20 @@
 
 
 ## Introduction
-These simple scripts are used to easley compress videos and images.
+These simple scripts are used to easily compress videos and images.
 <div align="center">
   <video src="./ressources/exemple.mp4" width="676" height="532" controls></video>
 </div>
 
 ## Getting Started
 ### Prerequisites
-You ned to have Ffmpeg installed on your system (Follow the installation guides [here](https://www.ffmpeg.org/download.html))
+You need to have ffmpeg installed on your system (Follow the installation guides [here](https://www.ffmpeg.org/download.html))
 
 ### Installation
-To install this tool globally, just tun the install script (`./install.sh`). You can now run the script via the `compressor` command!
+To install this tool globally, just run the install script (`./install.sh`). You can now run the script via the `compressor` command!
 
 ## Video compression
-To compress videos, use the `video-compressor` command and pass the directory with your videos an an input using the `-i` flag (ex : `video-compressor -i /path/to/your/videos`)
+To compress videos, use the `video-compressor` command and pass the directory with your videos as an input using the `-i` flag (ex : `video-compressor -i /path/to/your/videos`)
 ```sh
 Usage: <script> -i <inputPath> [options]
 
@@ -36,7 +36,7 @@ Options:
 ```
 
 ## Image compression
-To compress videos, use the `image-compressor` command and pass the directory with your videos an an input using the `-i` flag (ex : `image-compressor -i /path/to/your/images`)
+To compress videos, use the `image-compressor` command and pass the directory with your videos as an input using the `-i` flag (ex : `image-compressor -i /path/to/your/images`)
 ```sh
 Usage: <script> -i <inputPath> [options]
 
