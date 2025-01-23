@@ -97,6 +97,7 @@ function compress() {
   local fileName="$(basename -- "$file")"
   local fileNameWithoutExtension="${fileName%.*}"
   local extension="${fileName##*.}"
+  local createdTime=$(stat -c %Y "$file")
   local outputName="$filePath/$fileNameWithoutExtension-p.$extension"
   currentOutputFile="$outputName"
   # Check if the file is already processed
@@ -114,6 +115,7 @@ function compress() {
   wait $videoPid
   kill $spinnerPid
   rm "$1" # Remove the original file
+  touch -a -m -t $createdTime "$outputName" # Set the creation time of the new file to the original file
 }
 
 # Function to print the time taken to compress the video(s)
