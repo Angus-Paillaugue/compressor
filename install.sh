@@ -37,7 +37,7 @@ trap handleCtrlC SIGINT
 trap 'errorHandling $LINENO $BASH_COMMAND' ERR SIGTERM
 
 # Install the video-compressor script
-sudo cp videovideo-compressor.sh /usr/local/bin/video-compressor
+sudo cp video-compressor.sh /usr/local/bin/video-compressor
 sudo chmod +x /usr/local/bin/video-compressor
 # Install the image-compressor script
 sudo cp image-compressor.sh /usr/local/bin/image-compressor

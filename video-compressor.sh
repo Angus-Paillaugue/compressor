@@ -115,7 +115,7 @@ function compress() {
   wait $videoPid
   kill $spinnerPid
   rm "$1" # Remove the original file
-  touch -a -m -t $createdTime "$outputName" # Set the creation time of the new file to the original file
+  touch -a -m -d "$(date -d @$createdTime +'%Y-%m-%d %H:%M:%S')" "$outputName" # Set the creation time of the new file to the original file
 }
 
 # Function to print the time taken to compress the video(s)
