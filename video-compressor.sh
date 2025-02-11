@@ -12,6 +12,12 @@ if [ ! -x "$(command -v ffmpeg)" ]; then
   exit 1
 fi
 
+# Check encoding codecs and devices
+hasCudaDevice=""
+if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L | grep -q "GPU"; then
+  hasCudaDevice="true"
+fi
+
 # Function to handle errors
 function errorHandling() {
   # $1: line number
@@ -105,8 +111,24 @@ function compress() {
     return
   fi
 
-  # Compress the video
-  ffmpeg -i "$file" -vcodec libx265 -movflags use_metadata_tags -map_metadata 0 -crf $crf -preset "$preset" "$outputName" > /dev/null 2>&1 &
+  # Build the command
+  command="ffmpeg "
+  if [ -n "$hasCudaDevice" ]; then
+    command+="-hwaccel cuda "
+  fi
+  command+="-i \"$file\" "
+  if [ -n "$hasCudaDevice" ]; then
+    command+="-c:v hevc_nvenc "
+  else
+    command+="-c:v libx265 "
+  fi
+  command+="-preset $preset "
+  command+="-crf $crf "
+  command+="-c:a copy "
+  command+="-movflags use_metadata_tags "
+  command+="-map_metadata 0 "
+  command+="\"$outputName\" > /dev/null 2>&1 &"
+  eval $command
   videoPid=$!
 
   # Displays the spinner and waits for the videoPid to finish
@@ -252,6 +274,11 @@ fi
 
 # Start the timer
 start=$(date +%s)
+
+# If hasCudaDevice is not empty, display the message
+if [ -n "$hasCudaDevice" ]; then
+  echo -e " ${GREEN}✓${NC} Found CUDA device, using it for encoding"
+fi
 
 # If inputPath is a file
 if [ -f "$inputPath" ]; then
