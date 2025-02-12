@@ -21,11 +21,8 @@ function throwError() {
 # Function to handle errors
 function errorHandling() {
   # $1: line number
-  # Message, ...args
-  local lineNum=$1
-  shift 1
-  local message="$*"
-  echo -e "${RED}Error on line $lineNum:${NC}\n$message"
+  # $2: error message
+  echo -e "${RED}Error on line $1: $2${NC}"
   exit 1
 }
 
@@ -41,25 +38,8 @@ trap handleCtrlC SIGINT
 # Use trap to catch ERR and call the errorHandling function
 trap 'errorHandling $LINENO $BASH_COMMAND' ERR SIGTERM
 
-localDir=$(dirname "$0")
-
-# Download the video-compressor script
-curl -s https://raw.githubusercontent.com/Angus-Paillaugue/compressor/refs/heads/main/video-compressor.sh -o $localDir/$scriptName
-
-# Copy the script
-sudo cp ${localDir}/$scriptName /usr/local/bin/$scriptName
-
-# Remove the downloaded script
-rm ${localDir}/$scriptName
-
-# Make the video-compressor script executable
+# Install the script
+sudo cp $scriptName.sh /usr/local/bin/$scriptName
 sudo chmod +x /usr/local/bin/$scriptName
-
-
-# Check if the video-compressor script has been installed successfully
-if [ ! -f /usr/local/bin/${scriptName} ]; then
-  throwError "The $scriptName script could not be installed."
-fi
-
 
 echo -e " ${GREEN}✓${NC} The $scriptName script have been installed successfully."

@@ -12,11 +12,17 @@ if [ ! -x "$(command -v ffmpeg)" ]; then
   exit 1
 fi
 
+# Flags
+preset="fast" # Default value for the preset
+valid_presets=("ultrafast" "superfast" "veryfast" "faster" "fast" "medium" "slow" "slower" "veryslow" "placebo")
+crf=23 # Default value for the crf to 23 (best I found for my use case)
+inputPath=""
+validFormats=("mp4" "mov" "avi" "mkv") # Valid video formats
+recursive=false
+
 # Check encoding codecs and devices
-hasCudaDevice=""
-if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L | grep -q "GPU"; then
-  hasCudaDevice="true"
-fi
+encoder="libx265"
+hwaccel=""
 
 # Function to handle errors
 function errorHandling() {
@@ -50,17 +56,22 @@ function handleCtrlC() {
 
 # Function to display help
 function displayHelp() {
-  echo "Usage: compress-copy.sh -i <inputPath> [options]"
+  echo "Usage: $(basename "$0") -i <inputPath> [options]"
   echo ""
   echo "Options:"
   echo "  -i, --inputPath <inputPath>   Specify the input path."
   echo "  -r, --recursive               Recursively compress all the videos in the input path."
-  echo "  -preset <presetValue>         Specify the preset value (default: fast)."
-  echo "                                Valid presets: ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow, placebo."
-  echo "  -crf <value>                  Specify the CRF value (default: 23)."
+  echo ""
+  echo "  --preset <presetValue>        Specify the preset value (default: fast)."
+  echo "                                Valid presets: ultrafast, superfast, veryfast, faster,"
+  echo "                                fast, medium, slow, slower, veryslow, placebo."
+  echo ""
+  echo "  --crf <value>                 Specify the CRF value (default: 23)."
   echo "                                Valid range: 0-51."
+  echo ""
   echo "  -h, --help                    Display this help message and exit."
-  echo "  --rename <inputPath>      Rename the processed files to remove the trailing \"-p\" in their name."
+  echo ""
+  echo "  --rename <inputPath>          Rename the processed files to remove the trailing \"-p\" in their name."
 }
 
 # Function to display spinner
@@ -111,17 +122,16 @@ function compress() {
     return
   fi
 
-  # Build the command
+  # Build the command using the optimized hardware acceleration settings
   command="ffmpeg "
-  if [ -n "$hasCudaDevice" ]; then
-    command+="-hwaccel cuda "
-  fi
+  [ -n "$hwaccel" ] && command+="$hwaccel "
   command+="-i \"$file\" "
-  if [ -n "$hasCudaDevice" ]; then
-    command+="-c:v hevc_nvenc "
-  else
-    command+="-c:v libx265 "
+
+  if [ "$encoder" = "hevc_vaapi" ]; then
+    command+="-vf format=nv12,hwupload "
   fi
+
+  command+="-c:v $encoder "
   command+="-preset $preset "
   command+="-crf $crf "
   command+="-c:a copy "
@@ -136,8 +146,8 @@ function compress() {
   spinnerPid=$!
   wait $videoPid
   kill $spinnerPid
-  rm "$1" # Remove the original file
-  touch -a -m -d "$(date -d @$createdTime +'%Y-%m-%d %H:%M:%S')" "$outputName" # Set the creation time of the new file to the original file
+  # rm "$1" # Remove the original file
+  touch -a -m -d "$(date -d @$createdTime +'%Y-%m-%d %H:%M:%S')" "$outputName" # Retain original file's timestamp
 }
 
 # Function to print the time taken to compress the video(s)
@@ -208,14 +218,6 @@ trap handleCtrlC SIGINT
 # Use trap to catch ERR and call the errorHandling function
 trap 'errorHandling $LINENO $BASH_COMMAND' ERR SIGTERM
 
-# Flags
-preset="fast" # Default value for the preset
-valid_presets=("ultrafast" "superfast" "veryfast" "faster" "fast" "medium" "slow" "slower" "veryslow" "placebo")
-crf=23 # Default value for the crf to 23 (best I found for my use case)
-inputPath=""
-validFormats=("mp4" "mov" "avi" "mkv") # Valid video formats
-recursive=false
-
 # Parse the arguments
 while [ "$1" != "" ]; do
   case $1 in
@@ -235,11 +237,11 @@ while [ "$1" != "" ]; do
       renameFiles "$1"
       exit 0
       ;;
-    -preset )
+    --preset )
       shift
       preset="$1"
       ;;
-    -crf )
+    --crf )
       shift
       crf="$1"
       ;;
@@ -272,13 +274,34 @@ if [[ ! -d "$inputPath" && ! -f "$inputPath" ]]; then
   exit 1
 fi
 
+if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L | grep -q "GPU"; then
+  # NVIDIA GPU found
+  encoder="hevc_nvenc"
+  hwaccel="-hwaccel cuda"
+  gpuInfo=$(nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader)
+  echo -e "Auto-detected ${GREEN}NVIDIA GPU${NC}. Using hevc_nvenc."
+  echo -e "GPU Info: $gpuInfo"
+elif command -v vainfo >/dev/null 2>&1 && (vainfo 2>&1 | grep -iq "intel" || vainfo 2>&1 | grep -iq "amd"); then
+  # Intel/AMD GPU found
+  encoder="hevc_vaapi"
+  hwaccel="-hwaccel vaapi -hwaccel_device /dev/dri/renderD128"
+  echo -e "Auto-detected ${GREEN}VAAPI-supported GPU (Intel/AMD)${NC}. Using hevc_vaapi."
+  echo -e "Device: /dev/dri/renderD128"
+elif [ -e /dev/dri/renderD128 ]; then
+  # VAAPI render node found
+  encoder="hevc_vaapi"
+  hwaccel="-hwaccel vaapi -hwaccel_device /dev/dri/renderD128"
+  echo -e "Found ${GREEN}VAAPI render node${NC}. Using hevc_vaapi."
+  echo -e "Device: /dev/dri/renderD128"
+else
+  # No supported GPU found
+  encoder="libx265"
+  hwaccel=""
+  echo -e "${YELLOW}No supported GPU found${NC}. Falling back to software encoding (libx265)."
+fi
+
 # Start the timer
 start=$(date +%s)
-
-# If hasCudaDevice is not empty, display the message
-if [ -n "$hasCudaDevice" ]; then
-  echo -e " ${GREEN}✓${NC} Found CUDA device, using it for encoding"
-fi
 
 # If inputPath is a file
 if [ -f "$inputPath" ]; then
