@@ -20,7 +20,10 @@ You need to have ffmpeg installed on your system (Follow the installation guides
 
 ### Installation
 
-To install this tool globally, just run the install script (`./install.sh`). You can now run the script via the `compressor` command!
+To install this tool, just run the following command :
+```bash
+curl -sSL https://raw.githubusercontent.com/Angus-Paillaugue/compressor/refs/heads/main/install.sh | bash
+```
 
 # Usage
 
