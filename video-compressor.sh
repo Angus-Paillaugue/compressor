@@ -12,6 +12,22 @@ if [ ! -x "$(command -v ffmpeg)" ]; then
   exit 1
 fi
 
+# Function to display help
+function displayHelp() {
+  echo "Usage: video-compressor -i <inputPath> [options]"
+  echo ""
+  echo "Options:"
+  echo "  -i, --inputPath <inputPath>   Specify the input path."
+  echo "  -r, --recursive               Recursively compress all the videos in the input path."
+  echo "  -preset <presetValue>         Specify the preset value (default: fast)."
+  echo "                                Valid presets: ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow, placebo."
+  echo "  -crf <value>                  Specify the CRF value (default: 23)."
+  echo "                                Valid range: 0-51."
+  echo "  -h, --help                    Display this help message and exit."
+  echo "  --rename <inputPath>          Rename the processed files to remove the trailing \"-p\" in their name."
+  echo "  -dr, --dry-run                Run the script in dry-run mode."
+}
+
 # Flags
 preset="fast" # Default value for the preset
 valid_presets=("ultrafast" "superfast" "veryfast" "faster" "fast" "medium" "slow" "slower" "veryslow" "placebo")
@@ -19,10 +35,95 @@ crf=23 # Default value for the crf to 23 (best I found for my use case)
 inputPath=""
 validFormats=("mp4" "mov" "avi" "mkv") # Valid video formats
 recursive=false
+dryRun=false
+
+# Parse the arguments
+while [ "$1" != "" ]; do
+  case $1 in
+    -h | --help )
+      displayHelp
+      exit 0
+      ;;
+    -r | --recursive )
+      recursive=true
+      ;;
+    -i | --inputPath )
+      shift
+      inputPath="$1"
+      ;;
+    --rename )
+      shift
+      renameFiles "$1"
+      exit 0
+      ;;
+    -preset )
+      shift
+      preset="$1"
+      ;;
+    -dr | --dry-run )
+      dryRun=true
+      ;;
+    -crf )
+      shift
+      crf="$1"
+      ;;
+    *)
+      echo -e "${RED}Unknown option${NC}: $1"
+      displayHelp
+      exit 1
+  esac
+  shift
+done
+# Validate inputPath
+if [ -z "$inputPath" ]; then
+  throwError "Input path is required."
+  displayHelp
+  exit 1
+fi
+# Validate preset
+if [[ ! " ${valid_presets[@]} " =~ " ${preset} " ]]; then
+  throwError "Invalid preset value '$preset'. Valid options are: ${valid_presets[*]}"
+  exit 1
+fi
+# Validate crf
+if [[ ! $crf =~ ^[0-9]+$ ]] || [ $crf -lt 0 ] || [ $crf -gt 51 ]; then
+  throwError "Invalid crf value '$crf'. crf value should be an integer between 0 and 51"
+  exit 1
+fi
+# Input path validation
+if [[ ! -d "$inputPath" && ! -f "$inputPath" ]]; then
+  throwError "$inputPath is not a valid directory or file"
+  exit 1
+fi
 
 # Check encoding codecs and devices
 encoder="libx265"
 hwaccel=""
+if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L | grep -q "GPU"; then
+  # NVIDIA GPU found
+  encoder="hevc_nvenc"
+  hwaccel="-hwaccel cuda"
+  gpuInfo=$(nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader)
+  echo -e "Auto-detected ${GREEN}NVIDIA GPU${NC}. Using hevc_nvenc."
+  echo -e "GPU Info: $gpuInfo"
+elif command -v vainfo >/dev/null 2>&1 && (vainfo 2>&1 | grep -iq "intel" || vainfo 2>&1 | grep -iq "amd"); then
+  # Intel/AMD GPU found
+  encoder="hevc_vaapi"
+  hwaccel="-hwaccel vaapi -hwaccel_device /dev/dri/renderD128"
+  echo -e "Auto-detected ${GREEN}VAAPI-supported GPU (Intel/AMD)${NC}. Using hevc_vaapi."
+  echo -e "Device: /dev/dri/renderD128"
+elif [ -e /dev/dri/renderD128 ]; then
+  # VAAPI render node found
+  encoder="hevc_vaapi"
+  hwaccel="-hwaccel vaapi -hwaccel_device /dev/dri/renderD128"
+  echo -e "Found ${GREEN}VAAPI render node${NC}. Using hevc_vaapi."
+  echo -e "Device: /dev/dri/renderD128"
+else
+  # No supported GPU found
+  encoder="libx265"
+  hwaccel=""
+  echo -e "${YELLOW}No supported GPU found${NC}. Falling back to software encoding (libx265)."
+fi
 
 # Function to handle errors
 function errorHandling() {
@@ -52,26 +153,6 @@ function handleCtrlC() {
     rm -f "$currentOutputFile"
   fi
   exit 1
-}
-
-# Function to display help
-function displayHelp() {
-  echo "Usage: $(basename "$0") -i <inputPath> [options]"
-  echo ""
-  echo "Options:"
-  echo "  -i, --inputPath <inputPath>   Specify the input path."
-  echo "  -r, --recursive               Recursively compress all the videos in the input path."
-  echo ""
-  echo "  --preset <presetValue>        Specify the preset value (default: fast)."
-  echo "                                Valid presets: ultrafast, superfast, veryfast, faster,"
-  echo "                                fast, medium, slow, slower, veryslow, placebo."
-  echo ""
-  echo "  --crf <value>                 Specify the CRF value (default: 23)."
-  echo "                                Valid range: 0-51."
-  echo ""
-  echo "  -h, --help                    Display this help message and exit."
-  echo ""
-  echo "  --rename <inputPath>          Rename the processed files to remove the trailing \"-p\" in their name."
 }
 
 # Function to display spinner
@@ -146,7 +227,6 @@ function compress() {
   spinnerPid=$!
   wait $videoPid
   kill $spinnerPid
-  # rm "$1" # Remove the original file
   touch -a -m -d "$(date -d @$createdTime +'%Y-%m-%d %H:%M:%S')" "$outputName" # Retain original file's timestamp
 }
 
@@ -210,6 +290,11 @@ function renameFile() {
   local fileNameWithoutExtension="${fileName%.*}"
   local extension="${fileName##*.}"
   local newFileName="${fileNameWithoutExtension%-p}.$extension"
+  # If dry run, just print the new file name
+  if [ "$dryRun" = true ]; then
+    echo -e " ${GREEN}✓${NC} ${fileName} → ${newFileName}"
+    return
+  fi
   mv "$file" "$(dirname -- "$file")/$newFileName"
 }
 
@@ -217,88 +302,6 @@ function renameFile() {
 trap handleCtrlC SIGINT
 # Use trap to catch ERR and call the errorHandling function
 trap 'errorHandling $LINENO $BASH_COMMAND' ERR SIGTERM
-
-# Parse the arguments
-while [ "$1" != "" ]; do
-  case $1 in
-    -h | --help )
-      displayHelp
-      exit 0
-      ;;
-    -r | --recursive )
-      recursive=true
-      ;;
-    -i | --inputPath )
-      shift
-      inputPath="$1"
-      ;;
-    --rename )
-      shift
-      renameFiles "$1"
-      exit 0
-      ;;
-    --preset )
-      shift
-      preset="$1"
-      ;;
-    --crf )
-      shift
-      crf="$1"
-      ;;
-    *)
-      echo -e "${RED}Unknown option${NC}: $1"
-      displayHelp
-      exit 1
-  esac
-  shift
-done
-# Validate inputPath
-if [ -z "$inputPath" ]; then
-  throwError "Input path is required."
-  displayHelp
-  exit 1
-fi
-# Validate preset
-if [[ ! " ${valid_presets[@]} " =~ " ${preset} " ]]; then
-  throwError "Invalid preset value '$preset'. Valid options are: ${valid_presets[*]}"
-  exit 1
-fi
-# Validate crf
-if [[ ! $crf =~ ^[0-9]+$ ]] || [ $crf -lt 0 ] || [ $crf -gt 51 ]; then
-  throwError "Invalid crf value '$crf'. crf value should be an integer between 0 and 51"
-  exit 1
-fi
-# Input path validation
-if [[ ! -d "$inputPath" && ! -f "$inputPath" ]]; then
-  throwError "$inputPath is not a valid directory or file"
-  exit 1
-fi
-
-if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L | grep -q "GPU"; then
-  # NVIDIA GPU found
-  encoder="hevc_nvenc"
-  hwaccel="-hwaccel cuda"
-  gpuInfo=$(nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader)
-  echo -e "Auto-detected ${GREEN}NVIDIA GPU${NC}. Using hevc_nvenc."
-  echo -e "GPU Info: $gpuInfo"
-elif command -v vainfo >/dev/null 2>&1 && (vainfo 2>&1 | grep -iq "intel" || vainfo 2>&1 | grep -iq "amd"); then
-  # Intel/AMD GPU found
-  encoder="hevc_vaapi"
-  hwaccel="-hwaccel vaapi -hwaccel_device /dev/dri/renderD128"
-  echo -e "Auto-detected ${GREEN}VAAPI-supported GPU (Intel/AMD)${NC}. Using hevc_vaapi."
-  echo -e "Device: /dev/dri/renderD128"
-elif [ -e /dev/dri/renderD128 ]; then
-  # VAAPI render node found
-  encoder="hevc_vaapi"
-  hwaccel="-hwaccel vaapi -hwaccel_device /dev/dri/renderD128"
-  echo -e "Found ${GREEN}VAAPI render node${NC}. Using hevc_vaapi."
-  echo -e "Device: /dev/dri/renderD128"
-else
-  # No supported GPU found
-  encoder="libx265"
-  hwaccel=""
-  echo -e "${YELLOW}No supported GPU found${NC}. Falling back to software encoding (libx265)."
-fi
 
 # Start the timer
 start=$(date +%s)
@@ -322,10 +325,16 @@ if [ -f "$inputPath" ]; then
     baseSize=$(du -h "$file" | cut -f1)
 
     # Actual compression
-    compress "$file"
+    if [ "$dryRun" = false ]; then
+      compress "$file"
+    fi
 
     # Get the new file size
-    newSize=$(du -h "$outputName" | cut -f1)
+    newSize=$baseSize
+    # If not in dry run mode, get the new file size
+    if [ "$dryRun" = false ]; then
+      newSize=$(du -h "$outputName" | cut -f1)
+    fi
 
     echo -e " ${GREEN}✓${NC} ${fileName} : ${RED}${baseSize}${NC} → ${GREEN}${newSize}${NC}"
 
@@ -391,12 +400,20 @@ else
       baseSize=$(du -h "$file" | cut -f1)
 
       # Actual compression
-      compress "$file"
+      if [ "$dryRun" = false ]; then
+        compress "$file"
+      fi
 
       # Get the new file size
-      newSize=$(du -h "$outputName" | cut -f1)
+      newSize=$baseSize
+      # If not in dry run mode, get the new file size
+      if [ "$dryRun" = false ]; then
+        newSize=$(du -h "$outputName" | cut -f1)
+        echo -e " ${GREEN}✓${NC} ${fileName} : ${RED}${baseSize}${NC} → ${GREEN}${newSize}${NC} (${YELLOW}${filesToGo}${NC} to go)"
+      else
+        echo -e " ${GREEN}✓${NC} ${fileName} : ${RED}${baseSize}${NC} (${YELLOW}${filesToGo}${NC} to go)"
+      fi
 
-      echo -e " ${GREEN}✓${NC} ${fileName} : ${RED}${baseSize}${NC} → ${GREEN}${newSize}${NC} (${YELLOW}${filesToGo}${NC} to go)"
     fi
   done
 
