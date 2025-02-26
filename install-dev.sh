@@ -38,8 +38,10 @@ trap handleCtrlC SIGINT
 # Use trap to catch ERR and call the errorHandling function
 trap 'errorHandling $LINENO $BASH_COMMAND' ERR SIGTERM
 
+localDir=$(dirname "$0")
+
 # Install the script
-sudo cp $scriptName.sh /usr/local/bin/$scriptName
+sudo cp "$localDir/$scriptName.sh" /usr/local/bin/$scriptName
 sudo chmod +x /usr/local/bin/$scriptName
 
 echo -e " ${GREEN}✓${NC} The $scriptName script have been installed successfully."
